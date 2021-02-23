@@ -4,6 +4,9 @@ import com.github.javaparser.StaticJavaParser
 import com.github.javaparser.ast.CompilationUnit
 import java.io.File
 import java.util.Optional
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger(AstAnalyzer::class.java)
 
 class AstAnalyzer(private val file: File) {
 
@@ -15,45 +18,34 @@ class AstAnalyzer(private val file: File) {
      * @return A list of fully qualified class names.
      */
     fun getClasses(): List<String> = compilationUnit.types.map {
-            it.fullyQualifiedName.unwrap() ?: ""
+            it.fullyQualifiedName.unwrap()
+                    ?: "".also { _ -> logger.warn("Could not get fully qualified name for ${it.nameAsString}.") }
         }.filter { it.isNotEmpty() }
 
     /**
-     * Gets all non-static and non-asterisk imports.
+     * Gets all imports.
      *
-     * @return A list of names of the imported classes.
+     * @return A list of [Import]s of the imported classes.
      */
-    fun getImports(): List<String> = compilationUnit.imports
-            .filter { !it.isAsterisk && !it.isStatic }
-            .map { it.nameAsString }
-
-    /**
-     * Gets all asterisk imports.
-     *
-     * @return A list of names of the imported classes.
-     */
-    fun getAsteriskImports(): List<String> = compilationUnit.imports
-            .filter { it.isAsterisk && !it.isStatic }
-            .map { it.nameAsString }
-
-    /**
-     * Gets all static imports.
-     *
-     * @return A list of names of the imported classes.
-     */
-    fun getStaticImports(): List<String> = compilationUnit.imports
-            .filter { it.isStatic && !it.isAsterisk }
-            .map { it.nameAsString }
-
-    /**
-     * Gets all static asterisk imports.
-     *
-     * @return A list of names of the imported classes.
-     */
-    fun getStaticAsteriskImports(): List<String> = compilationUnit.imports
-            .filter { it.isStatic && it.isAsterisk }
-            .map { it.nameAsString }
+    fun getImports(): List<Import> = compilationUnit.imports
+            .map {
+                when {
+                    it.isAsterisk && it.isStatic -> Import(it.nameAsString, ImportType.STATIC_ASTERISK)
+                    it.isAsterisk -> Import(it.nameAsString, ImportType.ASTERISK)
+                    it.isStatic -> Import(it.nameAsString, ImportType.STATIC)
+                    else -> Import(it.nameAsString, ImportType.NORMAL)
+                }
+            }
 
     private fun <T> Optional<T>.unwrap(): T? = orElse(null)
 
+}
+
+data class Import(val name: String, val type: ImportType)
+
+enum class ImportType {
+    NORMAL,
+    STATIC,
+    ASTERISK,
+    STATIC_ASTERISK
 }

@@ -5,11 +5,11 @@ import org.hamcrest.MatcherAssert.assertThat
 import org.hamcrest.Matchers.containsInAnyOrder
 import org.junit.jupiter.api.Test
 
-class FileCollectorTest {
+class FileCollectorTests {
 
     @Test
     fun `Can collect Java files from root project dir`() {
-        val javaFiles = FileCollector(File("src/test/resources/test"))
+        val javaFiles = FileCollector(File(rootDir))
                 .collectFiles("java")
 
         assertThat(javaFiles.map { it.name }, containsInAnyOrder("App.java",
@@ -24,7 +24,7 @@ class FileCollectorTest {
 
     @Test
     fun `Can collect Java files without tests from root project dir`() {
-        val javaFiles = FileCollector(File("src/test/resources/test"))
+        val javaFiles = FileCollector(File(rootDir))
                 .collectFiles("java", false)
 
         assertThat(javaFiles.map { it.name }, containsInAnyOrder("App.java",
