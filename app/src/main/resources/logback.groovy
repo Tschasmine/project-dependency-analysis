@@ -11,7 +11,7 @@ appender("FILE", FileAppender) {
         onMatch = ACCEPT
         onMismatch = DENY
     }
-    file = "frontend.log"
+    file = "analyzer.log"
     append = true
     encoder(PatternLayoutEncoder) {
         pattern = "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

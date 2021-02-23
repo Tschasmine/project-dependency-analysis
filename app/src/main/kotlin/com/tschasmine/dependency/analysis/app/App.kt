@@ -26,6 +26,10 @@ object Arguments {
             .desc("Whether to show third-party dependencies.").build()
     private val projectOption = Option.builder("p").longOpt("project").hasArg()
             .desc("Only output this sub-project's dependencies.").build()
+    private val detailsOption = Option.builder("i").longOpt("imports")
+            .desc("Show import level dependencies.").build()
+    private val outputFileOption = Option.builder("f").longOpt("file").hasArg()
+            .desc("Output directory path (defaults to ./build/)").build()
 
     private val options = Options()
             .addOption(helpOption)
@@ -33,6 +37,8 @@ object Arguments {
             .addOption(directoryOption)
             .addOption(thirdPartyOption)
             .addOption(projectOption)
+            .addOption(detailsOption)
+            .addOption(outputFileOption)
 
     fun parse(args: Array<String>) {
         try {
@@ -54,8 +60,20 @@ object Arguments {
                 ""
             }
 
-            DotFileBuilder().apply {
-                write(build(File(commandLine.getOptionValue(directoryOption)), project, thirdParty))
+            val outputDir = if(commandLine.hasOption(outputFileOption)) {
+                commandLine.getOptionValue(outputFileOption)
+            } else {
+                ""
+            }
+
+            if (commandLine.hasOption(detailsOption)) {
+                DotFileBuilder(outputDir).apply {
+                    render(detailedBuild(File(commandLine.getOptionValue(directoryOption)), project))
+                }
+            } else {
+                DotFileBuilder(outputDir).apply {
+                    render(build(File(commandLine.getOptionValue(directoryOption)), project, thirdParty))
+                }
             }
 
         } catch (e: ParseException) {
@@ -77,10 +95,10 @@ object Arguments {
 }
 
 private fun CommandLine.getOptionValue(option: Option) = if (option.hasLongOpt()) {
-        this.getOptionValue(option.longOpt)
-    } else {
-        this.getOptionValue(option.opt)
-    }
+    this.getOptionValue(option.longOpt)
+} else {
+    this.getOptionValue(option.opt)
+}
 
 private fun CommandLine.hasOption(option: Option) =
         (option.hasLongOpt() && this.hasOption(option.longOpt))

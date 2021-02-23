@@ -21,7 +21,7 @@ dependencies {
     implementation("org.codehaus.groovy:groovy-all:2.5.14")
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.6.2")
-    testImplementation("org.hamcrest:hamcrest-all:1.3")
+    testImplementation("org.hamcrest:hamcrest:2.2")
 
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
 }
