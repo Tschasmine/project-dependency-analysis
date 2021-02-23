@@ -13,7 +13,7 @@ class IntegrationTest {
     fun `Can analyze test project dependencies`() {
         data class TestDependency(val name: String, val projects: List<String>)
 
-        val dependencies = DependencyModelBuilder.buildFor(FileCollector(File(rootDir)).collectFiles("java"))
+        val dependencies = DependencyModelBuilder.buildFor(File(rootDir), FileCollector(File(rootDir)).collectFiles("java"))
 
         val testDependencies = dependencies.map { dep -> TestDependency(dep.originClassModel.name, dep.dependencies.map { it.name }) }
 

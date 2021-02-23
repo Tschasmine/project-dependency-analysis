@@ -18,6 +18,10 @@ class FileCollector(private val rootDir: File) {
      * @return A list of names of all files with [extension] within [dir].
      */
     fun collectFiles(extension: String, withTests: Boolean = true, dir: File = rootDir): List<File> {
+        if (dir == rootDir) {
+            logger.info("Collecting files with extension '$extension' from $rootDir " +
+                    "(with test source sets: $withTests)...")
+        }
         return (dir.listFiles { file ->
             file.isDirectory
         }.normalize()).flatMap {

@@ -1,6 +1,7 @@
 package com.tschasmine.dependency.analysis.backend
 
 import java.io.File
+import kotlin.io.path.ExperimentalPathApi
 import org.hamcrest.CoreMatchers.`is`
 import org.hamcrest.MatcherAssert.assertThat
 import org.hamcrest.Matchers.containsInAnyOrder
@@ -12,7 +13,7 @@ class DependencyModelTest {
     fun `Can get containing sub-project`() {
         val testFile = File("$rootDir/app/src/main/java/com/example/app/App.java")
 
-        assertThat(testFile.getProject(), `is`("app"))
+        assertThat(testFile.getProject(File(rootDir)), `is`("app"))
     }
 
     @Test
@@ -23,7 +24,7 @@ class DependencyModelTest {
                 File("$rootDir/utilities/src/main/java/com/example/utilities/JoinUtils.java")
         )
 
-        val classModels = ClassModelBuilder.buildFor(testFiles)
+        val classModels = ClassModelBuilder.buildFor(File(rootDir), testFiles)
 
         assertThat(classModels, containsInAnyOrder(
                 ClassModel("com.example.app.App", "app", listOf(
@@ -83,7 +84,7 @@ class DependencyModelTest {
                         Project("list", listOf(Import("com.example.list.LinkedList", ImportType.NORMAL)))
                 )
         )
-        val dependencies = DependencyModelBuilder.buildFor(testFiles)
+        val dependencies = DependencyModelBuilder.buildFor(File(rootDir), testFiles)
         assertThat(dependencies, containsInAnyOrder(classApp, classLinkedList, classStringUtils))
     }
 

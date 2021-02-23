@@ -3,25 +3,26 @@ package com.tschasmine.dependency.analysis.backend
 import java.io.File
 import org.slf4j.LoggerFactory
 
-const val thirdPartyProject = "thirdparty"
-
 private val logger = LoggerFactory.getLogger("com.tschasmine.dependency.analysis.backend.DependencyModel")
 
 object ClassModelBuilder {
-
-    fun buildFor(files: List<File>) = files.flatMap { file ->
+    fun buildFor(rootProject: File, files: List<File>) = files.flatMap { file ->
         val analyzer = AstAnalyzer(file)
         analyzer.getClasses().map {
-            ClassModel(it, file.getProject(), analyzer.getImports())
+            ClassModel(it, file.getProject(rootProject), analyzer.getImports())
         }
     }
 
 }
 
+
 object DependencyModelBuilder {
 
-    fun buildFor(files: List<File>): List<DependencyCollection> {
-        val classModels = ClassModelBuilder.buildFor(files)
+    const val thirdPartyProject = "thirdparty"
+
+    fun buildFor(rootProject: File, files: List<File>): List<DependencyCollection> {
+        logger.info("Building dependency model for project '$rootProject'...")
+        val classModels = ClassModelBuilder.buildFor(rootProject, files)
         return classModels.map { classModel ->
             val deps = classModel.imports.map { import ->
                 Dependency(classModel,
@@ -41,17 +42,10 @@ object DependencyModelBuilder {
 }
 
 
-fun File.getProject(): String {
-    if (this.parent == "/") {
-        throw CouldNotDetermineProjectException()
-                .also { logger.error(it.message, it) }
-    }
-    if (this.parent != "src") {
-        logger.debug("Source folder not reached, currently: '${this.absolutePath}'")
-        this.parentFile.getProject()
-    }
-    return this.parentFile.name
-}
+fun File.getProject(rootProject: File) = this.absolutePath.replace("${rootProject.absolutePath}/", "")
+        .also { logger.trace("Cut path: '$it'") }
+        .split("/").firstOrNull()?.also { logger.debug("Found project: '$it'") }
+        ?: throw CouldNotDetermineProjectException()
 
 data class ClassModel(val name: String, val project: String, val imports: List<Import>)
 
