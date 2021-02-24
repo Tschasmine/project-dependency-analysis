@@ -30,6 +30,8 @@ object Arguments {
             .desc("Show import level dependencies.").build()
     private val outputFileOption = Option.builder("f").longOpt("file").hasArg()
             .desc("Output directory path (defaults to ./build/)").build()
+    private val largeOption = Option.builder("l").longOpt("large")
+            .desc("Speed up large dot file rendering").build()
 
     private val options = Options()
             .addOption(helpOption)
@@ -39,6 +41,7 @@ object Arguments {
             .addOption(projectOption)
             .addOption(detailsOption)
             .addOption(outputFileOption)
+            .addOption(largeOption)
 
     fun parse(args: Array<String>) {
         try {
@@ -68,7 +71,7 @@ object Arguments {
 
             if (commandLine.hasOption(detailsOption)) {
                 DotFileBuilder(outputDir).apply {
-                    render(detailedBuild(File(commandLine.getOptionValue(directoryOption)), project))
+                    render(detailedBuild(File(commandLine.getOptionValue(directoryOption)), project), commandLine.hasOption(largeOption))
                 }
             } else {
                 DotFileBuilder(outputDir).apply {

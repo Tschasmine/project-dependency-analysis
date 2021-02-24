@@ -17,7 +17,7 @@ class DotFileBuilderTest {
     }
 
     @Test
-    fun `Can create files for specific projects`() {
+    fun `Can create files for specific project`() {
         val dotFileBuilder = DotFileBuilder()
         val dotFile = dotFileBuilder.build(testProject, "list")
         assertThat(dotFileBuilder.render(dotFile), anExistingFile())
@@ -27,6 +27,13 @@ class DotFileBuilderTest {
     fun `Can create detailed view`() {
         val dotFileBuilder = DotFileBuilder()
         val dotFile = dotFileBuilder.detailedBuild(testProject)
+        assertThat(dotFileBuilder.render(dotFile), anExistingFile())
+    }
+
+    @Test
+    fun `Can create detailed view for specific project`() {
+        val dotFileBuilder = DotFileBuilder()
+        val dotFile = dotFileBuilder.detailedBuild(testProject, "app")
         assertThat(dotFileBuilder.render(dotFile), anExistingFile())
     }
 
