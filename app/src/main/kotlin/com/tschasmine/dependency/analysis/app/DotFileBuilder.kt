@@ -1,11 +1,9 @@
 package com.tschasmine.dependency.analysis.app
 
-import com.tschasmine.dependency.analysis.backend.DependencyCollection
-import com.tschasmine.dependency.analysis.backend.DependencyModelBuilder
-import com.tschasmine.dependency.analysis.backend.DependencyModelBuilder.thirdPartyProject
+import com.google.common.graph.MutableGraph
+import com.tschasmine.dependency.analysis.backend.ClassModelBuilder
+import com.tschasmine.dependency.analysis.backend.ClassWithProject
 import com.tschasmine.dependency.analysis.backend.FileCollector
-import com.tschasmine.dependency.analysis.backend.Import
-import com.tschasmine.dependency.analysis.backend.ImportType
 import io.github.livingdocumentation.dotdiagram.DotGraph
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -16,135 +14,79 @@ private val logger = LoggerFactory.getLogger(DotFileBuilder::class.java)
 @Suppress("ComplexCondition")
 class DotFileBuilder(private val outputDir: String = "") {
 
-    fun detailedBuild(dir: File, projectFilter: String = ""): File {
-        val dependencies = DependencyModelBuilder.buildFor(dir, FileCollector(dir).collectFiles("java", false))
-        val importsOfFilterProject = dependencies.filter { it.originClassModel.project == projectFilter }.flatMap { dep -> dep.originClassModel.imports.map { it.name } }
-        val projects = dependencies
-                .flatMap { dep ->
-                    dep.dependencies.map { project ->
-                        Pair(project.name, project.usedClasses.map { import ->
-                            if (import.type == ImportType.STATIC) {
-                                Import(import.name.dropLastWhile { it != '.' }.dropLast(1), ImportType.NORMAL)
-                            } else {
-                                import
-                            }
-                        })
-                    }
-                }
-                .plus(dependencies.map { dep ->
-                    Pair(dep.originClassModel.project, listOf(Import(dep.originClassModel.name, ImportType.NORMAL)))
-                })
-                .filter { it.first != thirdPartyProject }
-                .groupBy({ it.first }, { it.second })
-                .map { ProjectWithImports(it.key, it.value.flatten().distinct()) }
-        logger.info("Found ${projects.size} projects: \n" +
-                projects.map { it.name }.joinToString("\n") { "* $it" })
+    fun classView(dir: File, clazz: String, transitive: Boolean = false): File {
+        val classGraph = ClassModelBuilder.buildGraphFor(dir, FileCollector(dir).collectFiles("java", false), clazz)
+        val graph = visualize(classGraph)
 
-        val coloredProjects = ColoredProjects(projects.map { it.name }.toSet())
-
-        val graph = DotGraph("Dependency Analysis")
-        val diGraph = graph.digraph
-        addClustersAndNodes(projects, diGraph, coloredProjects, importsOfFilterProject, projectFilter)
-        addAssociations(dependencies, diGraph, coloredProjects, projectFilter)
-
-        return buildFile(projectFilter, dir, graph)
+        return buildFile(dir, graph, transitive, clazz)
     }
 
-    fun build(dir: File, project: String = "", withThirdParty: Boolean = false): File {
-        val dependencies = DependencyModelBuilder.buildFor(dir, FileCollector(dir).collectFiles("java", false))
-        val projects = dependencies.flatMap { dep -> dep.dependencies.map { it.name } }.toSet()
-        logger.info("Found ${projects.size} projects: \n${projects.joinToString("\n") { "* $it" }}")
+    fun detailedBuild(dir: File, transitive: Boolean = false): File {
+        val classGraph = ClassModelBuilder.buildGraph(dir, FileCollector(dir).collectFiles("java", false))
+        val graph = visualize(classGraph)
 
+        return buildFile(dir, graph, transitive)
+    }
+
+    fun build(dir: File, transitive: Boolean = false): File {
+        val graph = DotGraph("Dependency Analysis")
+        val diGraph = graph.digraph
+
+        val classGraph = ClassModelBuilder.buildGraph(dir, FileCollector(dir).collectFiles("java", false))
+        val projects = classGraph.nodes().map { it.project }.toSet()
         val coloredProjects = ColoredProjects(projects)
+        projects.forEach {
+            diGraph.addNode(it).apply {
+                label = it
+                options = "color=${coloredProjects.getColorFor(it)}"
+            }
+        }
 
+        classGraph.edges().forEach {
+            if (it.target().project != it.source().project) {
+                diGraph.addAssociation(it.target().project, it.source().project).apply {
+                    options = "color=${coloredProjects.getColorFor(it.source().project)}"
+                }
+            }
+        }
+
+        return buildFile(dir, graph, transitive)
+    }
+
+    private fun visualize(classGraph: MutableGraph<ClassWithProject>): DotGraph {
         val graph = DotGraph("Dependency Analysis")
         val diGraph = graph.digraph
-        addNodes(projects, diGraph, coloredProjects)
-        addAssociations(dependencies, withThirdParty, project, diGraph, coloredProjects)
 
-        return buildFile(project, dir, graph)
-    }
-
-    private fun buildFile(project: String, dir: File, graph: DotGraph) =
-            File("${if (outputDir.isBlank()) "./build" else outputDir}/${if (project.isEmpty()) dir.name else project}.dot")
-                    .also {
-                        it.writeText(graph.render().trim()
-                                .replace("graph [labelloc=top,label=\"Dependency Analysis\",fontname=\"Verdana\",fontsize=12];",
-                                        "graph [labelloc=top,label=\"Dependency Analysis\",fontname=\"Verdana\",fontsize=12,overlap=false];"))
-                    }
-                    .also { logger.info("Created dot file '${it.absolutePath}'") }
-
-    private fun addClustersAndNodes(projects: List<ProjectWithImports>, diGraph: DotGraph.Digraph, coloredProjects: ColoredProjects, importsOfFilterProject: List<String>, projectFilter: String) {
-        projects.forEach { projectWithImports ->
-            diGraph.addCluster(projectWithImports.name).apply {
-                label = projectWithImports.name
-                options = "color=${coloredProjects.getColorFor(projectWithImports.name)}"
-                projectWithImports.imports.forEach { import ->
-                    if (projectFilter == ""
-                            || importsOfFilterProject.find { it.contains(import.name) } != null
-                            || projectWithImports.name == projectFilter) {
-                        addNode(import.name).apply {
-                            label = import.name
-                            comment = import.type.name
-                            options = "color=${coloredProjects.getColorFor(projectWithImports.name)}"
-                        }
-                    }
+        val coloredProjects = ColoredProjects(classGraph.nodes().map { it.project }.toSet())
+        classGraph.nodes().groupBy { it.project }.forEach { (project, classes) ->
+            val cluster = diGraph.addCluster(project).apply {
+                label = project
+                options = "color=${coloredProjects.getColorFor(project)}"
+            }
+            classes.map { it.clazz }.forEach {
+                cluster.addNode(it).apply {
+                    label = it
+                    options = "color=${coloredProjects.getColorFor(project)}"
                 }
             }
         }
-    }
-
-    private fun addNodes(projects: Set<String>, diGraph: DotGraph.Digraph, coloredProjects: ColoredProjects) {
-        projects.filter { it != thirdPartyProject }.forEach { projectAsNode ->
-            diGraph.addNode(projectAsNode).apply {
-                label = projectAsNode
-                options = "color=${coloredProjects.getColorFor(projectAsNode)}"
-            }
+        classGraph.edges().forEach { edge ->
+            diGraph.addAssociation(edge.source().clazz, edge.target().clazz)
         }
+        return graph
     }
 
-    private fun addAssociations(dependencies: List<DependencyCollection>, diGraph: DotGraph.Digraph, coloredProjects: ColoredProjects, projectFilter: String = "") {
-        dependencies.forEach { depCollection ->
-            val currentClass = depCollection.originClassModel.name
-            depCollection.dependencies.forEach { project ->
-                project.usedClasses.forEach { import ->
-                    val importName = getImportName(import)
-                    val projectOfCurrentImport = dependencies.flatMap { it.dependencies }.find { it.usedClasses.contains(import) }
-                    if (projectOfCurrentImport == null) {
-                        logger.warn("Could not determine current imports project")
-                    } else if (projectOfCurrentImport.name != thirdPartyProject
-                            && projectOfCurrentImport.name != depCollection.originClassModel.project
-                            && (projectFilter.isBlank() || depCollection.originClassModel.project == projectFilter)) {
-                        logger.debug("Adding association $currentClass -> $importName")
-                        diGraph.addAssociation(currentClass, importName).apply {
-                            options = "color=${coloredProjects.getColorFor(project.name)}"
-                        }
-                    } else {
-                        logger.debug("Skipping association of $currentClass -> $importName")
-                    }
+    private fun buildFile(dir: File, graph: DotGraph, transitive: Boolean, name: String = ""): File {
+        val dotFile = File("${if (outputDir.isBlank()) "./build" else outputDir}/${if (name.isEmpty()) dir.name else name}.dot")
+                .also {
+                    it.writeText(graph.render().trim()
+                            .replace("graph [labelloc=top,label=\"Dependency Analysis\",fontname=\"Verdana\",fontsize=12];",
+                                    "graph [labelloc=top,label=\"Dependency Analysis\",fontname=\"Verdana\",fontsize=12,overlap=false];"))
                 }
-            }
-        }
-    }
-
-    private fun getImportName(import: Import) = if (import.type == ImportType.STATIC)
-        import.name.dropLastWhile { it != '.' }.dropLast(1)
-    else
-        import.name
-
-    private fun addAssociations(dependencies: List<DependencyCollection>, withThirdParty: Boolean, project: String, diGraph: DotGraph.Digraph, coloredProjects: ColoredProjects) {
-        dependencies.forEach { dependencyCollection ->
-            dependencyCollection.dependencies.forEach { dependentProject ->
-                val currentProject = dependencyCollection.originClassModel.project
-                if (currentProject != dependentProject.name
-                        && (withThirdParty || dependentProject.name != thirdPartyProject)
-                        && (project.isEmpty() || currentProject == project)) {
-                    diGraph.addAssociation(currentProject, dependentProject.name).apply {
-                        options = "color=${coloredProjects.getColorFor(dependentProject.name)}"
-                    }
-                }
-            }
-        }
+                .also { logger.info("Created dot file '${it.absolutePath}'") }
+        return if (transitive) File(dotFile.parentFile, "${dotFile.nameWithoutExtension}-tred.${dotFile.extension}").also {
+            "/usr/local/bin/tred ${dotFile.absolutePath}".runCommand(outputFile = it)
+        } else dotFile
     }
 
     fun render(dotFile: File, large: Boolean = false): File {
@@ -164,10 +106,10 @@ class DotFileBuilder(private val outputDir: String = "") {
     }
 
     @Suppress("SpreadOperator")
-    private fun String.runCommand(workingDir: File = File(".")) {
+    private fun String.runCommand(workingDir: File = File("."), outputFile: File? = null) {
         ProcessBuilder(*split(" ").toTypedArray())
                 .directory(workingDir)
-                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                .redirectOutput(if (outputFile == null) ProcessBuilder.Redirect.INHERIT else ProcessBuilder.Redirect.to(outputFile))
                 .redirectError(ProcessBuilder.Redirect.INHERIT)
                 .start()
                 .waitFor(4, TimeUnit.HOURS)
@@ -188,7 +130,5 @@ class DotFileBuilder(private val outputDir: String = "") {
 
         data class ColoredProject(val name: String, val color: String)
     }
-
-    private data class ProjectWithImports(val name: String, val imports: List<Import>)
 
 }

@@ -1,58 +1,78 @@
 package com.tschasmine.dependency.analysis.backend
 
+import com.google.common.graph.GraphBuilder
+import com.google.common.graph.MutableGraph
 import java.io.File
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("com.tschasmine.dependency.analysis.backend.DependencyModel")
 
 object ClassModelBuilder {
-    fun buildFor(rootProject: File, files: List<File>) = files.flatMap { file ->
-        val analyzer = AstAnalyzer(file)
-        analyzer.getClasses().map {
-            ClassModel(it, file.getProject(rootProject), analyzer.getImports())
+
+    fun buildGraph(rootProject: File, files: List<File>): MutableGraph<ClassWithProject> {
+        val graph = GraphBuilder.directed().build<ClassWithProject>()
+        files.forEach { file ->
+            AstAnalyzer(file).getClasses().forEach { graph.addNode(ClassWithProject(it, file.getProject(rootProject))) }
         }
-    }
-
-}
-
-
-object DependencyModelBuilder {
-
-    const val thirdPartyProject = "thirdparty"
-
-    fun buildFor(rootProject: File, files: List<File>): List<DependencyCollection> {
-        logger.info("Building dependency model for project '$rootProject'...")
-        val classModels = ClassModelBuilder.buildFor(rootProject, files)
-        return classModels.map { classModel ->
-            val deps = classModel.imports.map { import ->
-                Dependency(classModel,
-                        when (import.type) {
-                            ImportType.NORMAL -> classModels.find { it.name == import.name }?.project
-                            ImportType.STATIC -> classModels.find { import.name.contains(it.name) }?.project
-                            ImportType.ASTERISK -> classModels.find { it.name.contains(import.name) }?.project
-                            ImportType.STATIC_ASTERISK -> classModels.find { it.name == import.name }?.project
-                        } ?: thirdPartyProject,
-                        import)
+        files.forEach { file ->
+            val analyzer = AstAnalyzer(file)
+            analyzer.getImports().forEach { import ->
+                val originClass = graph.nodes().find { it.clazz == import.name || import.name.contains(it.clazz) }
+                if (originClass != null) {
+                    analyzer.getClasses().forEach { clazz ->
+                        val importClass = graph.nodes().find { it.clazz == clazz }
+                        if (importClass != null) {
+                            graph.putEdge(originClass, importClass)
+                        }
+                    }
+                }
             }
-            DependencyCollection(classModel, deps.groupBy({ it.project }, { it.import })
-                    .entries.map { Project(it.key, it.value) })
         }
+        graph.edges().filter { it.source() == it.target() }.forEach { graph.removeEdge(it.source(), it.target()) }
+        graph.nodes().filter { graph.outDegree(it) == 0 && graph.inDegree(it) == 0 }.forEach { graph.removeNode(it) }
+        return graph
     }
 
-}
+    fun buildGraphFor(rootProject: File, files: List<File>, clazz: String): MutableGraph<ClassWithProject> {
+        val graph = GraphBuilder.directed().build<ClassWithProject>()
+        val analyzers = files
+                .map { file ->
+                    val analyzer = AstAnalyzer(file)
+                    analyzer.getClasses().forEach { graph.addNode(ClassWithProject(it, file.getProject(rootProject))) }
+                    analyzer
+                }
+                .flatMap { analyzer ->
+                    analyzer.getClasses().map { clazz ->
+                        clazz to analyzer
+                    }
+                }.toMap()
+        addEdges(analyzers, clazz, graph)
+        graph.nodes().filter { graph.outDegree(it) == 0 && graph.inDegree(it) == 0 }.forEach { graph.removeNode(it) }
+        return graph
+    }
 
+    private fun addEdges(analyzers: Map<String, AstAnalyzer>, clazz: String, graph: MutableGraph<ClassWithProject>) {
+        val analyzer = analyzers[clazz]
+        analyzer?.getImports()?.forEach { import ->
+            val importClass = graph.nodes().find { it.clazz == import.name || import.name.contains(it.clazz) }
+            if (importClass != null) {
+                analyzer.getClasses().forEach { clazz ->
+                    val originClass = graph.nodes().find { it.clazz == clazz }
+                    if (originClass != null) {
+                        graph.putEdge(originClass, importClass)
+                        addEdges(analyzers, importClass.clazz, graph)
+                    }
+                }
+            }
+        }
+    }
+}
 
 fun File.getProject(rootProject: File) = this.absolutePath.replace("${rootProject.absolutePath}/", "")
         .also { logger.trace("Cut path: '$it'") }
         .split("/").firstOrNull()?.also { logger.debug("Found project: '$it'") }
         ?: throw CouldNotDetermineProjectException()
 
-data class ClassModel(val name: String, val project: String, val imports: List<Import>)
-
-data class Project(val name: String, val usedClasses: List<Import>)
-
-data class DependencyCollection(val originClassModel: ClassModel, val dependencies: List<Project>)
-
-data class Dependency(val originClassModel: ClassModel, val project: String, val import: Import)
+data class ClassWithProject(val clazz: String, val project: String)
 
 class CouldNotDetermineProjectException : Exception("Reached '/' without finding 'src' in the path.")

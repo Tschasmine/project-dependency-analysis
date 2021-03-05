@@ -22,26 +22,26 @@ object Arguments {
             .desc("Sets log level to debug.").build()
     private val directoryOption = Option.builder("d").hasArg().longOpt("dir")
             .desc("The project's root directory.").build()
-    private val thirdPartyOption = Option.builder("t").longOpt("with-third-party")
-            .desc("Whether to show third-party dependencies.").build()
-    private val projectOption = Option.builder("p").longOpt("project").hasArg()
-            .desc("Only output this sub-project's dependencies.").build()
+    private val classOption = Option.builder("c").longOpt("class").hasArg()
+            .desc("Only output this class' dependencies.").build()
     private val detailsOption = Option.builder("i").longOpt("imports")
             .desc("Show import level dependencies.").build()
     private val outputFileOption = Option.builder("f").longOpt("file").hasArg()
             .desc("Output directory path (defaults to ./build/)").build()
     private val largeOption = Option.builder("l").longOpt("large")
-            .desc("Speed up large dot file rendering").build()
+            .desc("Speed up large dot file rendering (does not support clusters).").build()
+    private val transitiveOption = Option.builder("t").longOpt("filter-transitive")
+            .desc("Whether to filter transitive dependencies.").build()
 
     private val options = Options()
             .addOption(helpOption)
             .addOption(verboseOption)
             .addOption(directoryOption)
-            .addOption(thirdPartyOption)
-            .addOption(projectOption)
+            .addOption(classOption)
             .addOption(detailsOption)
             .addOption(outputFileOption)
             .addOption(largeOption)
+            .addOption(transitiveOption)
 
     fun parse(args: Array<String>) {
         try {
@@ -56,26 +56,30 @@ object Arguments {
                 printHelpAndExit(1)
             }
 
-            val thirdParty = commandLine.hasOption(thirdPartyOption)
-            val project = if (commandLine.hasOption(projectOption)) {
-                commandLine.getOptionValue(projectOption)
-            } else {
-                ""
-            }
-
             val outputDir = if(commandLine.hasOption(outputFileOption)) {
                 commandLine.getOptionValue(outputFileOption)
             } else {
                 ""
             }
 
-            if (commandLine.hasOption(detailsOption)) {
-                DotFileBuilder(outputDir).apply {
-                    render(detailedBuild(File(commandLine.getOptionValue(directoryOption)), project), commandLine.hasOption(largeOption))
+            val transitive = commandLine.hasOption(transitiveOption)
+
+            when {
+                commandLine.hasOption(classOption) -> {
+                    val singleClass = commandLine.getOptionValue(classOption)
+                    DotFileBuilder(outputDir).apply {
+                        render(classView(File(commandLine.getOptionValue(directoryOption)), singleClass, transitive), commandLine.hasOption(largeOption))
+                    }
                 }
-            } else {
-                DotFileBuilder(outputDir).apply {
-                    render(build(File(commandLine.getOptionValue(directoryOption)), project, thirdParty))
+                commandLine.hasOption(detailsOption) -> {
+                    DotFileBuilder(outputDir).apply {
+                        render(detailedBuild(File(commandLine.getOptionValue(directoryOption)), transitive), commandLine.hasOption(largeOption))
+                    }
+                }
+                else -> {
+                    DotFileBuilder(outputDir).apply {
+                        render(build(File(commandLine.getOptionValue(directoryOption)), transitive))
+                    }
                 }
             }
 
