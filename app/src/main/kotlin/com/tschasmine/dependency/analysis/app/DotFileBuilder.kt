@@ -85,14 +85,14 @@ class DotFileBuilder(private val outputDir: String = "") {
                 }
                 .also { logger.info("Created dot file '${it.absolutePath}'") }
         return if (transitive) File(dotFile.parentFile, "${dotFile.nameWithoutExtension}-tred.${dotFile.extension}").also {
-            "/usr/local/bin/tred ${dotFile.absolutePath}".runCommand(outputFile = it)
+            "tred ${dotFile.absolutePath}".runCommand(outputFile = it)
         } else dotFile
     }
 
     fun render(dotFile: File, large: Boolean = false): File {
         val imageFileName = "${dotFile.parentFile}/${dotFile.nameWithoutExtension}.svg"
         val start = System.currentTimeMillis()
-        "/usr/local/bin/dot ${if (large) "-Ksfdp " else ""}-Tsvg ${dotFile.absolutePath} -o $imageFileName".runCommand()
+        "dot ${if (large) "-Ksfdp " else ""}-Tsvg ${dotFile.absolutePath} -o $imageFileName".runCommand()
         val end = System.currentTimeMillis()
         val imageFile = File(imageFileName)
         if (!imageFile.exists()) {
